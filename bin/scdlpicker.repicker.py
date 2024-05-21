@@ -1,4 +1,4 @@
-#!/usr/bin/env seiscomp-python
+#!/home/sysop/git/scdlpicker/virtEnv/bin/python
 # -*- coding: utf-8 -*-
 ###########################################################################
 # Copyright (C) GFZ Potsdam                                               #
@@ -100,9 +100,9 @@ class RepickerApp(seiscomp.client.Application):
         device(str): Defines where to run the model - "cpu" or "gpu"
     """
 
-    def __init__(self, argc, argv):
-        argv = argv.copy()
-        argv[0] = "scdlpicker"
+    def __init__(self, model_name=None, dataset="ethz", workingDir=".",
+                 test=False, single_run=False, batch_size=False, device="cpu",
+                 min_confidence=0.4):
 
         super().__init__(argc, argv)
         self.setDatabaseEnabled(False, False)
@@ -429,7 +429,7 @@ class RepickerApp(seiscomp.client.Application):
             if path.is_symlink():
                 target = path.readlink()
                 if not target.exists():
-                    seiscomp.logging.warning("missing %s" % target)
+                    logger.warning("missing " + target)
                     continue
 
                 items.append( (path, target) )
@@ -492,11 +492,13 @@ class RepickerApp(seiscomp.client.Application):
             # /some/folder/name/eventID/in/oneOutOfMany.yaml
             # so the eventID is always at a fixed position in the
             # path. This is required.
-            assert str(target).endswith(".yaml")
+            assert target.endswith(".yaml")
             eventID = str(target).split("/")[-3]
 
             try:
+                logger.info("PROCESS begin")
                 new_picks = self._process(adhoc_picks, eventID)
+                logger.info("PROCESS end")
             except RuntimeError as e:
                 seiscomp.logging.warning(str(e))
                 continue
@@ -609,16 +611,16 @@ class RepickerApp(seiscomp.client.Application):
 
                 # The required min. distance between peaks is one second,
                 # i.e. the sampling rate controls the number of samples.
-                peaks, _ = scipy.signal.find_peaks(
-                    confidence, height=0.1, distance=self.model.sampling_rate)
+                peaks, peaksProperties = scipy.signal.find_peaks(
+                    confidence, height=0.3, distance=self.model.sampling_rate)
                 for peak in peaks:
                     picktime = annotation.stats.starttime + times[peak]
                     if pick.publicID not in predictions:
                         predictions[pick.publicID] = []
                     new_item = (picktime, confidence[peak])
                     predictions[pick.publicID].append(new_item)
-                    seiscomp.logging.debug(
-                        "#### " + pick.publicID + "  %.3f" % confidence[peak])
+                    logger.debug(
+                            "#### " + pick.publicID + "  %.3f" % confidence[peak])
 
                 collected_picks.remove(pick)
 
@@ -692,9 +694,37 @@ class RepickerApp(seiscomp.client.Application):
         return acc_predictions
 
 
-def main():
-    app = RepickerApp(len(sys.argv), sys.argv)
-    app()
+if __name__ == '__main__':
+    modelnames = list(models.keys())
+    parser = argparse.ArgumentParser(
+        description='SeicComp Client - ML Repicker using SeisBench')
+    parser.add_argument(
+        '--model', choices=modelnames, default=modelnames[0], type=str.lower,
+	dest='model_choice',
+        help="Choose one of the available ML models to make the predictions.")
+    parser.add_argument(
+        '--test', action='store_true',
+        help="Test mode - don't write outgoing yaml with refined picks.")
+    parser.add_argument(
+        '--exit', action='store_true', dest="single_run",
+        help='Exit after items in spool folder have been processed')
+    parser.add_argument(
+        '--bs', '--batch-size', action='store_const', const=50, default=50,
+        dest='batch_size',
+        help="Set batch size. Should be suitable for the hardware used [50]")
+    parser.add_argument(
+        '--device', choices=['cpu', 'gpu'], default='cpu',
+        help="With access to a cuda device change this parameter to 'gpu'.")
+    parser.add_argument(
+        '--working-dir', type=str, default='.', dest='workingDir',
+        help="Working directory where all files are placed and exchanged")
+    parser.add_argument(
+        '--dataset', type=str, default='ethz', dest='dataset',
+        help="The dataset on which the model was predicted [ethz].")
+    parser.add_argument(
+        '--min-confidence', type=float, default=0.3, dest='min_confidence',
+        help="Confidence threshold below which a pick is skipped [0.3]")
+    args = parser.parse_args()
 
 
 if __name__ == "__main__":
