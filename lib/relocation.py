@@ -89,7 +89,8 @@ def relocate(origin, eventID, fixedDepth=None, minimumDepth=5, maxResidual=4):
 
     origin = seiscomp.datamodel.Origin.Cast(origin)
 
-    loc = seiscomp.seismology.LocatorInterface.Create("LOCSAT")
+    loc = seiscomp.seismology.LocatorInterface.Create("FixedHypocenter")#LOCSAT")
+    loc.setProfile('LOCSAT/iasp91')
 
     if fixedDepth is not None:
         loc.useFixedDepth(True)
@@ -110,8 +111,8 @@ def relocate(origin, eventID, fixedDepth=None, minimumDepth=5, maxResidual=4):
         try:
             relocated = loc.relocate(origin)
             relocated = seiscomp.datamodel.Origin.Cast(relocated)
-        except RuntimeError:
-            relocated = None
+        except RuntimeError as e:
+            print(e);relocated = None
             seiscomp.logging.error("Failed to relocate origin")
 
         if relocated is None:
@@ -122,7 +123,7 @@ def relocate(origin, eventID, fixedDepth=None, minimumDepth=5, maxResidual=4):
             _util.summarize(origin, withPicks=True)
             timestamp = _util.isotimestamp(now)
             _util.dumpOriginXML(
-                origin, "%s-%s-failed-relocation.xml" % (eventID, timestamp))
+                origin, "%s-%s-failed-relocation.xml" % (eventID.split('/')[-1], timestamp))
             seiscomp.logging.error("Giving up")
             relocated = None
             break
