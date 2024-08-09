@@ -1,4 +1,4 @@
-#!/usr/bin/env seiscomp-python
+#!/home/sysop/git/seiscomp/src/extras/scdlpicker/virtEnv/bin/python
 # -*- coding: utf-8 -*-
 ###########################################################################
 # Copyright (C) GFZ Potsdam                                               #
@@ -28,7 +28,6 @@ This is a very simple online relocator that
 
 
 import sys
-import pathlib
 import seiscomp.core
 import seiscomp.client
 import seiscomp.datamodel
@@ -46,7 +45,7 @@ def quality(origin):
     return _util.arrivalCount(origin)  # to be improved
 
 
-class App(seiscomp.client.Application):
+class RelocatorApp(seiscomp.client.Application):
 
     def __init__(self, argc, argv):
         seiscomp.client.Application.__init__(self, argc, argv)
@@ -59,7 +58,6 @@ class App(seiscomp.client.Application):
 
         self.minimumDepth = _defaults.minimumDepth
         self.maxResidual = _defaults.maxResidual
-        self.minDelay = 18*60
 
         self.allowedAuthorIDs = _defaults.allowedAuthorIDs
 
@@ -100,44 +98,13 @@ class App(seiscomp.client.Application):
             "limit the individual pick residual to the specified value "
             "(in seconds)")
         self.commandline().addDoubleOption(
-            "Target", "min-delay",
-            "Minimum delay (in seconds) after origin time before a relocation "
-            "is attempted")
-        self.commandline().addDoubleOption(
             "Target", "max-rms",
             "limit the pick residual RMS to the specified value (in seconds)")
         self.commandline().addOption(
             "Target", "test", "test mode - don't send the result")
 
-    def initConfiguration(self):
-        # Called BEFORE validateParameters()
-
-        if not super(App, self).initConfiguration():
-            return False
-
-        try:
-            self.minDelay = self.configGetDouble("scdlpicker.minDelay")
-        except RuntimeError:
-            pass
-
-        return True
-
-    def validateParameters(self):
-        """
-        Command-line parameters
-        """
-        if not super(App, self).validateParameters():
-            return False
-
-        try:
-            self.minDelay = self.commandline().optionString("min-delay")
-        except RuntimeError:
-            pass
-
-        return True
-
     def init(self):
-        if not super(App, self).init():
+        if not super(RelocatorApp, self).init():
             return False
 
         self.inventory = seiscomp.client.Inventory.Instance().inventory()
@@ -191,13 +158,7 @@ class App(seiscomp.client.Application):
                 self.processEvent(eventID)
         # seiscomp.logging.debug("kickOffProcessing   end " + eventID)
 
-    def readyToProcess(self, eventID):
-        """
-        Before relocation we wait some time (minDelay, in seconds) to allow
-        collection of all required picks. This delay differs depending on the
-        network size; the default is 18 min. for global monitoring, i.e. it
-        is waited until practically all P picks are usually available.
-        """
+    def readyToProcess(self, eventID, minDelay=1080):
         if eventID not in self.pendingEvents:
             seiscomp.logging.error("Missing event "+eventID)
             return False
@@ -214,7 +175,7 @@ class App(seiscomp.client.Application):
         org = self.origins[preferredOriginID]
         now = seiscomp.core.Time.GMT()
         dt = float(now - org.time().value())
-        if dt < self.minDelay:
+        if dt < minDelay:
             return False
 
         try:
@@ -324,22 +285,15 @@ class App(seiscomp.client.Application):
 
         # adopt fixed depth according to incoming origin
         defaultDepth = 10.  # FIXME: no fixed 10 km here
-        fixedDepth = None
-#       if _util.hasFixedDepth(origin) \
-#               and origin.depth().value() == defaultDepth:
-        if _util.hasFixedDepth(origin):
+        if _util.hasFixedDepth(origin) \
+                and origin.depth().value() == defaultDepth:
             # fixed = True
-            if _util.agencyID(origin) == self.agencyID and _util.statusFlag(origin) == "M":
-                # At GFZ we trust the depth of manual GFZ origins. But ymmv!
-                fixedDepth = origin.depth().value()
-            elif origin.depth().value() == defaultDepth:
-                fixedDepth = defaultDepth
-
-        if fixedDepth is None:
-            seiscomp.logging.debug("not fixing depth")
-            # fixed = False
-        else:
+            fixedDepth = origin.depth().value()
             seiscomp.logging.debug("setting fixed depth to %f km" % fixedDepth)
+        else:
+            # fixed = False
+            fixedDepth = None
+            seiscomp.logging.debug("not fixing depth")
 
         # Load all picks for a matching time span, independent of association.
         maxDelta = _defaults.maxDelta
@@ -392,15 +346,6 @@ class App(seiscomp.client.Application):
 
         self.relocated[eventID] = relocated
 
-        # FIXME:
-        workingDir = pathlib.Path("~/scdlpicker").expanduser()
-        try:
-            depth = _depth.computeDepth(ep, eventID, workingDir, seiscomp_workflow=True, picks=picks)
-            seiscomp.logging.info("DEPTH=%.1f" % depth)
-        except:
-            pass
-
-
     def run(self):
         seiscomp.datamodel.PublicObject.SetRegistrationEnabled(True)
 
@@ -443,10 +388,10 @@ class App(seiscomp.client.Application):
 
         # enter online mode
         self.enableTimer(1)
-        return super(App, self).run()
+        return super(RelocatorApp, self).run()
 
 
 if __name__ == "__main__":
-    app = App(len(sys.argv), sys.argv)
+    app = RelocatorApp(len(sys.argv), sys.argv)
     status = app()
     sys.exit(status)
