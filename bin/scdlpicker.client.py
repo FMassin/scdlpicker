@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/sysop/git/scdlpicker/virtEnv/bin/python
 # -*- coding: utf-8 -*-
 ###########################################################################
 # Copyright (C) GFZ Potsdam                                               #
@@ -48,7 +48,6 @@ streamTimeout = 5
 workingDir = "~/scdlpicker"
 
 # ignore objects (picks, origins) from these authors
-# TODO: Make configurable
 ignoredAuthors = [ "dl-reloc", author ]
 
 # We may receive origins from other agencies, but don't want to
@@ -70,10 +69,6 @@ global_net_sta_blacklist = [
     # bad components
     ("WA", "ZON"),
 ]
-
-
-# Normally no need to change this
-timeoutInterval = 1
 
 
 ttt = seiscomp.seismology.TravelTimeTable()
@@ -100,7 +95,7 @@ def isRepick(pick):
     Is this already a repick?
     """
 
-    methodIDs = ["DL", "PhaseNet", "PHN", "EQTransformer", "EQT", "XYZ"]
+    methodIDs = ["DL", "PhaseNet", "PHN", "EQTransformer", "EQT"]
     try:
         if pick.methodID() in methodIDs:
             return True
@@ -143,7 +138,7 @@ class App(seiscomp.client.Application):
 
     def __init__(self, argc, argv):
         # adopt the defaults from the top of this script
-        self.workingDir = workingDir
+        self.workingDir = None
 
         self.ignoredAuthors = ignoredAuthors
         self.ignoredAgencyIDs = ignoredAgencyIDs
@@ -169,12 +164,6 @@ class App(seiscomp.client.Application):
         # previous events are finished.
         self.pendingEvents = dict()
 
-        # This is the time window that we request for each repick.
-        # Depending on the use case this may be shorter (or longer)
-        self.beforeP = 60.
-        self.afterP = 60.
-
-
     def initConfiguration(self):
         # Called BEFORE validateParameters()
 
@@ -185,7 +174,7 @@ class App(seiscomp.client.Application):
         try:
             self.workingDir = self.configGetString("scdlpicker.workingDir")
         except RuntimeError:
-            pass
+            self.workingDir = None
 
         try:
             self.ignoredAuthors = \
@@ -206,16 +195,6 @@ class App(seiscomp.client.Application):
             self.emptyOriginAgencyIDs = emptyOriginAgencyIDs
 
         try:
-            self.beforeP = self.configGetDouble("scdlpicker.beforeP")
-        except RuntimeError:
-            pass
-
-        try:
-            self.afterP = self.configGetDouble("scdlpicker.afterP")
-        except RuntimeError:
-            pass
-
-        try:
             self.tryUpickedStations = \
                 self.configGetBool("scdlpicker.tryUpickedStations")
         except RuntimeError:
@@ -229,8 +208,6 @@ class App(seiscomp.client.Application):
         info("ignoredAgencyIDs = " + str(self.ignoredAgencyIDs))
         info("emptyOriginAgencyIDs = " + str(self.emptyOriginAgencyIDs))
         info("tryUpickedStations = " + str(self.tryUpickedStations))
-        info("beforeP = " + str(self.beforeP))
-        info("afterP = " + str(self.afterP))
 
     def createCommandLineDescription(self):
         self.commandline().addGroup("Config")
@@ -254,7 +231,8 @@ class App(seiscomp.client.Application):
             self.workingDir = self.commandline().optionString("working-dir")
         except RuntimeError:
             pass
-        self.workingDir = pathlib.Path(self.workingDir).expanduser()
+        else:
+            self.workingDir = pathlib.Path(self.workingDir).expanduser()
 
         self.setMessagingEnabled(True)
         if not self.commandline().hasOption("event"):
@@ -344,11 +322,10 @@ class App(seiscomp.client.Application):
             return False
 
     def handleTimeout(self):
-        # The timeout interval can be configured via timeoutInterval
-        self.pollRepickerResults()
+        self.pollResults()
         self.processPendingEvents()
 
-    def pollRepickerResults(self):
+    def pollResults(self):
         # Poll for repicker results between each event.
         #
         # Note that we poll here for any results, not just the current
@@ -367,7 +344,7 @@ class App(seiscomp.client.Application):
         for eventID in sorted(self.pendingEvents.keys()):
             event = self.pendingEvents.pop(eventID)
             self.processEvent(event)
-            self.pollRepickerResults()
+            self.pollResults()
 
     def findUnpickedStations(self, origin, maxDelta, picks):
         """
@@ -418,9 +395,9 @@ class App(seiscomp.client.Application):
                 # FIXME HACK FIXME
                 continue
             predictedPick = seiscomp.datamodel.Pick(pickID)
-            phase = seiscomp.datamodel.Phase()
-            phase.setCode("P")
-            predictedPick.setPhaseHint(phase)
+            #phase = seiscomp.datamodel.Phase()
+            #phase.setCode("P")
+            #predictedPick.setPhaseHint(phase)
             q = seiscomp.datamodel.TimeQuantity(time)
             predictedPick.setTime(q)
             wfid = seiscomp.datamodel.WaveformStreamID()
@@ -472,8 +449,10 @@ class App(seiscomp.client.Application):
                 continue
 
             t0 = pick.time().value()
-            t1 = t0 + seiscomp.core.TimeSpan(-self.beforeP)
-            t2 = t0 + seiscomp.core.TimeSpan(+self.afterP)
+            beforeP = 20. # adjusted by SED
+            afterP = 30.  # temporarily
+            t1 = t0 + seiscomp.core.TimeSpan(-beforeP)
+            t2 = t0 + seiscomp.core.TimeSpan(afterP)
             if (net, sta, loc, cha[:2]) not in self.components:
                 # This may occur if a station was (1) blacklisted or (2) added
                 # to the processing later on. Either way we skip this pick.
@@ -489,7 +468,7 @@ class App(seiscomp.client.Application):
 
         if request:
             # request waveforms and dump them to one file per stream
-            seiscomp.logging.info("Opening RecordStream "+self.recordStreamURL())
+            seiscomp.logging.info("Opening RecordStrem "+self.recordStreamURL())
             stream = seiscomp.io.RecordStream.Open(self.recordStreamURL())
             stream.setTimeout(streamTimeout)
             streamCount = 0
@@ -502,7 +481,7 @@ class App(seiscomp.client.Application):
                     streamCount += 1
 
             seiscomp.logging.info(
-                "RecordStream: requesting %d streams" % streamCount)
+                "RecordStream: requested %d streams" % streamCount)
             count = 0
             for rec in _util.RecordIterator(stream, showprogress=True):
                 if rec is None:
@@ -644,27 +623,6 @@ class App(seiscomp.client.Application):
         for eventID in blacklist:
             del self.workspaces[eventID]
 
-    def getAssociatedPicksForOrigin(self, originID):
-
-        # Query all associated picks for this origin
-        associated_picks = []
-        objects = self.query().getPicks(originID)
-        if not objects:
-            # FIXME: temp
-            seiscomp.logging.debug("no results from getPicks")
-        for obj in objects:
-            pick = seiscomp.datamodel.Pick.Cast(obj)
-
-            # prevent a pick from myself from being repicked
-            try:
-                if pick.creationInfo().author() in ignoredAuthors:
-                    continue
-            except Exception:
-                continue
-
-            associated_picks.append(pick)
-        return associated_picks
-
     def processOrigin(self, origin, event):
         """
         Process the given origin in the context of the given event.
@@ -685,11 +643,10 @@ class App(seiscomp.client.Application):
                 return
 
         seiscomp.logging.debug(
-            "processing origin " + originID + " of event " + eventID)
+            "processing origin "+originID+" of event "+eventID)
 
         workspace = self.workspaces[event.publicID()]
         workspace.origin = origin
-        workspace.new_picks.clear()
 
         # Find out which picks are new picks.
         #
@@ -697,8 +654,25 @@ class App(seiscomp.client.Application):
         # considered new. Therefore also picks that were
         # received previously but failed to process due to
         # missing data are now re-processed.
+        workspace.new_picks.clear()
 
-        associated_picks = self.getAssociatedPicksForOrigin(originID)
+        # Query all associated picks for this origin
+        associated_picks = []
+        objects = self.query().getPicks(originID)
+        if not objects:
+            # FIXME: temp
+            seiscomp.logging.debug("no results from getPicks")
+        for obj in objects:
+            pick = seiscomp.datamodel.Pick.Cast(obj)
+
+            # prevent a pick from myself from being repicked
+            try:
+                if pick.creationInfo().author() in ignoredAuthors:
+                    continue
+            except Exception:
+                continue
+
+            associated_picks.append(pick)
 
         for pick in associated_picks:
 
@@ -709,10 +683,9 @@ class App(seiscomp.client.Application):
 
             # We usually don't re-pick manual picks.
             # Perhaps add option to allow that.
-            skipManualPicks = False
-            if _util.manual(pick) and skipManualPicks:
-                seiscomp.logging.debug("Skipping manual pick "+pickID)
-                continue
+#           if _util.manual(pick):
+#               seiscomp.logging.debug("Skipping manual pick "+pickID)
+#               continue
 
             # FIXME: The problem with this check at this point is that
             # workspace.mlpicks[pickID] will exist only if by the time
@@ -761,7 +734,7 @@ class App(seiscomp.client.Application):
 
         if origin.creationInfo().agencyID() in emptyOriginAgencyIDs:
             # TODO: Make this distance magnitude dependent
-            maxDelta = 105.
+            maxDelta = 100.
         else:
             # The goal here is to limit the maximum distance to a
             # reasonable value reflecting the pick distribution
@@ -770,7 +743,7 @@ class App(seiscomp.client.Application):
             # teleseismic phases. Whereas if we have "a few"
             # teleseismic phases, there is a good chance to obtain
             # additional picks from all over the teleseismic
-            # distance range (hard limit here: 105 degrees).
+            # distance range (hard limit here: 100 degrees).
             maxDelta = 0.
             origin = workspace.origin
             # create a sorted list of distances of all *used* arrivals
@@ -792,7 +765,7 @@ class App(seiscomp.client.Application):
             # If the distance exceeds 50 degrees, it is promising
             # to look at the entire P distance range.
             if maxDelta > 40:
-                maxDelta = 105
+                maxDelta = 100
 
         if tryUpickedStations:
             # TODO: delay
@@ -845,13 +818,16 @@ class App(seiscomp.client.Application):
         """
         eventID = event.publicID()
 
+        # Load a more complete version of the event
+        event = self._loadEvent(eventID)
+        if event is None:
+            return
+
         # Register an EventWorkspace instance if needed
         if eventID not in self.workspaces:
             self.workspaces[eventID] = _ews.EventWorkspace()
         workspace = self.workspaces[eventID]
 
-        # Load a more complete version of the event
-        event = self._loadEvent(eventID)
         workspace.event = event
         originID = event.preferredOriginID()
         if workspace.origin:
@@ -879,7 +855,7 @@ class App(seiscomp.client.Application):
             return self.testEvent(eventID)
 
         # enter real-time mode
-        self.enableTimer(timeoutInterval)
+        self.enableTimer(10)
         seiscomp.datamodel.PublicObject.SetRegistrationEnabled(False)
 
         return super(App, self).run()

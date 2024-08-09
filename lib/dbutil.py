@@ -193,6 +193,7 @@ def loadPicksForOrigin(origin, inventory, allowedAuthorIDs, maxDelta, query, kee
     for pickID in picks:
         pick = picks[pickID]
         nslc = _util.nslc(pick)
+        nslc += ( pickID.split('_')[-1], )
         if nslc not in picks_per_nslc:
             picks_per_nslc[nslc] = []
         picks_per_nslc[nslc].append(pick)
@@ -241,7 +242,7 @@ def loadPicksForOrigin(origin, inventory, allowedAuthorIDs, maxDelta, query, kee
         if (pick.waveformID(), "P") in stream_phase_list:
             continue
 
-        n, s, l, c = nslc
+        n, s, l, c, p = nslc
         try:
             sta = station[n, s]
         except KeyError as e:
@@ -271,7 +272,13 @@ def loadPicksForOrigin(origin, inventory, allowedAuthorIDs, maxDelta, query, kee
         picks.append(pick)
 
         phase = seiscomp.datamodel.Phase()
-        phase.setCode("P")
+        phaseType = pickID[-1]
+        print("*****-----" + phaseType + "--------TEST_DARIO")
+        if phaseType == "S":
+            phase.setCode("S")
+        else:
+            phase.setCode("P")
+
         arr = seiscomp.datamodel.Arrival()
         arr.setPhase(phase)
         arr.setPickID(pickID)

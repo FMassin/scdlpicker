@@ -353,16 +353,6 @@ def creationInfo(author, agencyID, creationTime=None):
     return ci
 
 
-def agencyID(origin):
-    """
-    Return the agency ID of the origin or None if unset.
-    """
-    try:
-        return origin.creationInfo().agencyID()
-    except ValueError:
-        return
-
-
 def configuredStreams(configModule, myName):
 
     # Determine which streams are configured for picking
@@ -482,6 +472,7 @@ def readRepickerResults(path):
             time = seiscomp.core.Time.FromString(p["time"], "%FT%T.%fZ")
             tq = seiscomp.datamodel.TimeQuantity()
             tq.setValue(time)
+            phaseType = p["phaseHint"]
             net = p["networkCode"]
             sta = p["stationCode"]
             loc = p["locationCode"]
@@ -495,24 +486,29 @@ def readRepickerResults(path):
             wfid.setChannelCode(cha)
 
             model = p["model"].lower()
-            if model in ["eqt", "eqtransformer"]:
+            if model == "eqtransformer":
                 mth = "EQT"
-            elif model in ["phn", "phasenet"]:
+            elif model == "phasenet":
                 mth = "PHN"
             else:
                 mth = "XYZ"
+            mth = mth + '_' + phaseType
             decimals = 2
             nslcstr = net + "." + sta + "." + loc + "." + cha[:2]
             timestr = time.toString("%Y%m%d.%H%M%S.%f000000")[:16+decimals]
-            pickID = timestr + "-" + mth + "-" + nslcstr
+            pickID = timestr + "-" + nslcstr + "-" + mth
             pick = seiscomp.datamodel.Pick(pickID)
             pick.setTime(tq)
             pick.setWaveformID(wfid)
 
+            phase = seiscomp.datamodel.Phase()
+            phase.setCode(phaseType)
+            pick.setPhaseHint(phase)
+
             comments = []
 
             comment = seiscomp.datamodel.Comment()
-            comment.setText(p["model"])
+            comment.setText(mth)
             comment.setId("dlmodel")
             comments.append(comment)
 
@@ -535,9 +531,6 @@ def readRepickerResults(path):
         for pickID in picks:
             pick = picks[pickID]
             pick.setMethodID("DL")
-            phase = seiscomp.datamodel.Phase()
-            phase.setCode("P")
-            pick.setPhaseHint(phase)
             pick.setEvaluationMode(seiscomp.datamodel.AUTOMATIC)
 
     return picks, comms

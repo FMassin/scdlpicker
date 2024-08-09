@@ -1,4 +1,4 @@
-#!/usr/bin/env seiscomp-python
+#!/home/sysop/git/seiscomp/src/extras/scdlpicker/virtEnv/bin/python
 # -*- coding: utf-8 -*-
 ###########################################################################
 # Copyright (C) GFZ Potsdam                                               #
@@ -135,6 +135,7 @@ class RelocatorApp(seiscomp.client.Application):
         seiscomp.logging.info("Working on event "+eventID)
 
         event  = _dbutil.loadEvent(self.query(), eventID)
+        seiscomp.logging.info("Working on origin "+event.preferredOriginID())
         origin = _dbutil.loadOriginWithoutArrivals(
             self.query(), event.preferredOriginID())
 

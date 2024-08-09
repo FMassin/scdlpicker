@@ -28,15 +28,13 @@ import argparse
 import obspy
 
 # Here is the place to import other DL models
-from seisbench.models import EQTransformer, PhaseNet
+from seisbench.models import PhaseNet
 
 models = {
     'phasenet': PhaseNet,
-    'eqtransformer': EQTransformer,
 
     # short names for convenience
     'phn': PhaseNet,
-    'eqt': EQTransformer,
 }
 
 LOGFORMAT = "%(levelname)-8s  %(asctime)s %(message)s"
@@ -265,8 +263,10 @@ class Repicker:
             # the threshold, this is now a list of (time, confidence)
             # pairs.
             preds = predictions[pick_id]
+            phaseType = pick_id[-1]
 
-            triggering_pick = workspace.picks[pick_id]
+            triggeringPickID = pick_id[:-2]
+            triggering_pick = workspace.picks[triggeringPickID]
 
             for (ml_time, ml_conf) in preds:
                 logger.info("PICK   %s" % pick_id)
@@ -278,20 +278,22 @@ class Repicker:
                 # on the other hand it must be large enough to accommodate
                 # residuals due to wrong source depth.
                 # TODO: iterate!
-                dt_max = 10
-                dt = abs(ml_time - obspy.UTCDateTime(triggering_pick.time))
-                if abs(dt) > dt_max:
-                    logger.info("SKIPPED dt = %.2f" % dt)
-                    continue
+                if phaseType == 'P':
+                    dt_max = 10
+                    dt = abs(ml_time - obspy.UTCDateTime(triggering_pick.time))
+                    if abs(dt) > dt_max:
+                        logger.info("SKIPPED dt = %.2f" % dt)
+                        continue
                 if ml_conf < self.min_confidence:
                     logger.info("SKIPPED conf = %.3f" % ml_conf)
                     continue
-                old_pick = workspace.picks[pick_id]
+                old_pick = workspace.picks[triggeringPickID]
                 new_pick = old_pick.copy()
-                new_pick.publicID = old_pick.publicID + "/repick"
+                new_pick.publicID = old_pick.publicID + "/repick_" + phaseType
                 new_pick.model = self.model_name
                 new_pick.confidence = float("%.3f" % ml_conf)
                 new_pick.time = timestamp(ml_time)
+                new_pick.phaseHint = phaseType
 
                 # The key of the ML pick is the publicID of the
                 # original pick in order to make association easier.
@@ -439,6 +441,30 @@ class Repicker:
 
         return True
 
+    def process_one_annotation (self, phaseType, annotation, annotDir, predictions, pick):
+        annot_f = annotDir / (dotted_nslc(pick) + "_" + phaseType + ".sac")
+        print(annot_f)
+        annotation.write(str(annot_f), format="SAC")
+
+        confidence = annotation.data.astype(np.double)
+        times = annotation.times()
+
+        pickID = str(pick.publicID) + "_" + phaseType
+
+        # The required min. distance between peaks is one second,
+        # i.e. the sampling rate controls the number of samples.
+        peaks, _ = scipy.signal.find_peaks(
+            confidence, height=0.3, distance=self.model.sampling_rate)
+        for peak in peaks:
+            picktime = annotation.stats.starttime + times[peak]
+            if pickID not in predictions:
+                predictions[pickID] = []
+            new_item = (picktime, confidence[peak])
+            predictions[pickID].append(new_item)
+            logger.debug(
+                "#### " + pickID + "  %.3f" % confidence[peak])
+        return predictions
+
     def fill_result(self, predictions, stream, collected_picks,
                     annotDir, eventID):
         """Fills `predictions` with annotations done by the model
@@ -452,27 +478,36 @@ class Repicker:
             annotations = self.model.annotate(stream)
 
             # Only use those predictions that were done for P wave onsets
-            annotations = list(filter(
+            annotationsP = list(filter(
                 lambda a: a.id.split('.')[-1].endswith('_P'), annotations))
 
+            # Get S annotations - Dario
+            annotationsS = list(filter(
+                lambda a: a.id.split('.')[-1].endswith('_S'), annotations))
+            
             # indexes list of successfully associated annotations
             assoc_ind = []
-            for i, annotation in enumerate(annotations):
+
+            #Dario: We are working under assumption that all streams have both P and S annotations
+            #       which is true for PhaseNet
+            for i in range(len(annotationsP)): 
+                annotationP = annotationsP[i]
+                annotationS = annotationsS[i]
                 try:
                     # Associate the annotation to a Pick
 
                     pick = next(filter(
                         lambda p:
-                        p.networkCode == annotation.meta.network
-                        and p.stationCode == annotation.meta.station
-                        and p.locationCode == annotation.meta.location,
+                        p.networkCode == annotationP.meta.network
+                        and p.stationCode == annotationP.meta.station
+                        and p.locationCode == annotationP.meta.location,
                         collected_picks))
                 except StopIteration:
                     logger.warning(
                         "%s: failed to associate annotation for %s.%s" % (
                             eventID,
-                            annotation.meta.network,
-                            annotation.meta.station))
+                            annotationP.meta.network,
+                            annotationP.meta.station))
 
                     # No Pick could be found that matches the
                     # current annotation. The reason for this could be
@@ -488,27 +523,16 @@ class Repicker:
                     continue
 
                 assoc_ind.append(i)
-                annot_f = annotDir / (dotted_nslc(pick) + ".sac")
-                print(annot_f)
-                annotation.write(str(annot_f), format="SAC")
-
-                confidence = annotation.data.astype(np.double)
-                times = annotation.times()
-
-                # The required min. distance between peaks is one second,
-                # i.e. the sampling rate controls the number of samples.
-                peaks, peaksProperties = scipy.signal.find_peaks(
-                    confidence, height=0.3, distance=self.model.sampling_rate)
-                for peak in peaks:
-                    picktime = annotation.stats.starttime + times[peak]
-                    if pick.publicID not in predictions:
-                        predictions[pick.publicID] = []
-                    new_item = (picktime, confidence[peak])
-                    predictions[pick.publicID].append(new_item)
-                    logger.debug(
-                            "#### " + pick.publicID + "  %.3f" % confidence[peak])
+                
+                
+                # NOT FINISHED FROM HERE
+                # CHECK HOW TO DEAL WITH publicID in the "predictions" dictionary
+                # when having both P and S pick 
+                predictions = self.process_one_annotation("P", annotationP, annotDir, predictions, pick)
+                predictions = self.process_one_annotation("S", annotationS, annotDir, predictions, pick)
 
                 collected_picks.remove(pick)
+
 
         except (TypeError, ValueError, ZeroDivisionError) as e:
             logger.error(eventID+": caught "+repr(e))
