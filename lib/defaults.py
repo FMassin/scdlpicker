@@ -21,18 +21,4 @@ maxDelta = 105.
 
 # List of allowed pick authors.
 
-pickAuthors = ["dlpicker"]
-
-
-workingDir = "/tmp"
-
-
-dataset = "geofon"
-
-modelName = "eqtransformer"
-
-device = "cpu"
-
-batchSize = 1
-
-minConfidence = 0.4
+allowedAuthorIDs = ["ML picker"]

@@ -399,6 +399,12 @@ class RelocatorApp(seiscomp.client.Application):
         seiscomp.datamodel.PublicObject.SetRegistrationEnabled(True)
 
         try:
+            pickAuthors = self.commandline().optionString("pick-authors")
+            pickAuthors = pickAuthors.split()
+        except RuntimeError:
+            pickAuthors = ["ML picker"]
+
+        try:
             self.author = self.commandline().optionString("author")
         except RuntimeError:
             self.author = "dl-reloc"
