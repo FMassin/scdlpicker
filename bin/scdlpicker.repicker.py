@@ -104,6 +104,7 @@ class Repicker:
 
         self.model = models[model_name].from_pretrained(dataset)
         self.model_name = model_name
+        self.dataset = dataset
 
         self.test = test
         self.single_run = single_run
@@ -290,7 +291,7 @@ class Repicker:
                 old_pick = workspace.picks[triggeringPickID]
                 new_pick = old_pick.copy()
                 new_pick.publicID = old_pick.publicID + "/repick_" + phaseType
-                new_pick.model = self.model_name
+                new_pick.model = self.model_name + "-" + self.dataset
                 new_pick.confidence = float("%.3f" % ml_conf)
                 new_pick.time = timestamp(ml_time)
                 new_pick.phaseHint = phaseType
@@ -454,7 +455,7 @@ class Repicker:
         # The required min. distance between peaks is one second,
         # i.e. the sampling rate controls the number of samples.
         peaks, _ = scipy.signal.find_peaks(
-            confidence, height=0.3, distance=self.model.sampling_rate)
+            confidence, height=0.4, distance=self.model.sampling_rate)
         for peak in peaks:
             picktime = annotation.stats.starttime + times[peak]
             if pickID not in predictions:
@@ -526,8 +527,7 @@ class Repicker:
                 
                 
                 # NOT FINISHED FROM HERE
-                # CHECK HOW TO DEAL WITH publicID in the "predictions" dictionary
-                # when having both P and S pick 
+                # CHECK HOW TO DEAL WITH multiple picks in one annotation function
                 predictions = self.process_one_annotation("P", annotationP, annotDir, predictions, pick)
                 predictions = self.process_one_annotation("S", annotationS, annotDir, predictions, pick)
 
@@ -632,8 +632,8 @@ if __name__ == '__main__':
         '--dataset', type=str, default='ethz', dest='dataset',
         help="The dataset on which the model was predicted [ethz].")
     parser.add_argument(
-        '--min-confidence', type=float, default=0.3, dest='min_confidence',
-        help="Confidence threshold below which a pick is skipped [0.3]")
+        '--min-confidence', type=float, default=0.4, dest='min_confidence',
+        help="Confidence threshold below which a pick is skipped [0.4]")
     args = parser.parse_args()
 
     workingDir = pathlib.Path(args.workingDir).expanduser()
