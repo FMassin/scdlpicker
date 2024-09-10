@@ -33,10 +33,10 @@ import scdlpicker.eventworkspace as _ews
 # Below are parameters that for the time being are hardcoded.
 
 # That's me! This author ID will be written into all new picks.
-author = "dlpicker"
+author = "ML picker"
 
 # Agency ID to be written into all new picks.
-agency = "GFZ"
+agency = "GFZ" # SED"
 
 # The acquisition will wait that long to finalize the acquisition
 # of waveform time windows. The processing may be interrupted that
@@ -755,9 +755,12 @@ class App(seiscomp.client.Application):
             delta.sort()
 
             # As maximum distance use the average distance
-            # of the five farthest used arrivals.
+            # of the 3 farthest used arrivals.
             maxDelta = numpy.average(delta[-3:])
 
+            # DARIO: use minimum of 33 km for the maximum distance
+            if maxDelta < 0.3:
+                maxDelta = 0.3
             # If the distance exceeds 50 degrees, it is promising
             # to look at the entire P distance range.
             if maxDelta > 40:

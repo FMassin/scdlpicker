@@ -448,6 +448,15 @@ def pollRepickerResults(resultsDir):
 
     return yamlfilenames
 
+def map_confidence_to_uncertainty(confidence):
+    if confidence < 0.5:
+        return 0.2
+    elif confidence < 0.7:
+        return 0.1
+    elif confidence < 0.9:
+        return 0.05
+    else:
+        return 0.025
 
 def readRepickerResults(path):
     """
@@ -472,6 +481,11 @@ def readRepickerResults(path):
             time = seiscomp.core.Time.FromString(p["time"], "%FT%T.%fZ")
             tq = seiscomp.datamodel.TimeQuantity()
             tq.setValue(time)
+            conf = float(p["confidence"])
+            tq.setConfidenceLevel(conf)
+            uncertainty = map_confidence_to_uncertainty(conf)
+            tq.setUncertainty(uncertainty)
+
             phaseType = p["phaseHint"]
             net = p["networkCode"]
             sta = p["stationCode"]
@@ -486,13 +500,13 @@ def readRepickerResults(path):
             wfid.setChannelCode(cha)
 
             model = p["model"].lower()
-            if model == "eqtransformer":
-                mth = "EQT"
-            elif model == "phasenet":
-                mth = "PHN"
-            else:
-                mth = "XYZ"
-            mth = mth + '_' + phaseType
+            #if model == "eqtransformer":
+            #    mth = "EQT"
+            #elif model == "phasenet":
+            #    mth = "PHN"
+            #else:
+            #    mth = "XYZ"
+            mth = model + '_' + phaseType
             decimals = 2
             nslcstr = net + "." + sta + "." + loc + "." + cha[:2]
             timestr = time.toString("%Y%m%d.%H%M%S.%f000000")[:16+decimals]
@@ -504,6 +518,9 @@ def readRepickerResults(path):
             phase = seiscomp.datamodel.Phase()
             phase.setCode(phaseType)
             pick.setPhaseHint(phase)
+
+            pick.setMethodID(model)
+            pick.setEvaluationMode(seiscomp.datamodel.AUTOMATIC)
 
             comments = []
 
@@ -528,9 +545,6 @@ def readRepickerResults(path):
             confs[pickID] = conf
             comms[pickID] = comments
 
-        for pickID in picks:
-            pick = picks[pickID]
-            pick.setMethodID("DL")
-            pick.setEvaluationMode(seiscomp.datamodel.AUTOMATIC)
+        
 
     return picks, comms

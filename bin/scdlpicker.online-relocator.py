@@ -353,7 +353,7 @@ class RelocatorApp(seiscomp.client.Application):
             pickAuthors = self.commandline().optionString("pick-authors")
             pickAuthors = pickAuthors.split()
         except RuntimeError:
-            pickAuthors = ["dlpicker"]
+            pickAuthors = ["ML picker"]
 
         try:
             self.author = self.commandline().optionString("author")
