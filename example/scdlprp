@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# run on a machine without GPU
+export CUDA_VISIBLE_DEVICES="0"
+export PYTHONOPTIMIZE=TRUE
+SEISCOMP_ROOT=/usr/local
+
+source /usr/local/lib/python-seisbench-env/bin/activate
+
+# This does not have to be run with a SeisComP environment, hence
+# no need for 'seiscomp exec'
+
+if [ -f $SEISCOMP_ROOT/var/run/${0##*/}.pid ]; then
+    echo "already running, will kill previous instance\nbefore restarting"
+    kill `cat $SEISCOMP_ROOT/var/run/${0##*/}.pid`
+fi
+
+nohup scdlpicker.repicker.py 2>&1 \
+	--model phasenet \
+	--working-dir $HOME/scdlpicker >> ~/scdlpicker/scdlpicker.repicker.`date  +'%Y%m%d-%H%M%S'`.log&
+
+echo $! > $SEISCOMP_ROOT/var/run/${0##*/}.pid
+
