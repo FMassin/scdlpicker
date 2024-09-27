@@ -45,9 +45,6 @@ agency = "GFZ" # SED"
 # long!
 streamTimeout = 5
 
-# Send new picks to this group.
-messagingGroup = "MLTEST"
-
 # ignore objects (picks, origins) from these authors
 ignoredAuthors = [ "dl-reloc", author ]
 
@@ -139,7 +136,8 @@ class App(seiscomp.client.Application):
 
     def __init__(self, argc, argv):
         # adopt the defaults from the top of this script
-        self.workingDir = None
+        # This is the working directory where all the event data are written to.
+        self.workingDir = pathlib.Path("~/scdlpicker").expanduser()
 
         self.ignoredAuthors = ignoredAuthors
         self.ignoredAgencyIDs = ignoredAgencyIDs
@@ -172,7 +170,7 @@ class App(seiscomp.client.Application):
             return False
 
         try:
-            self.workingDir = self.configGetString("scdlpicker.workingDir")
+            self.workingDir = pathlib.Path(self.configGetString("scdlpicker.workingDir")).expanduser()
         except RuntimeError:
             self.workingDir = None
 
